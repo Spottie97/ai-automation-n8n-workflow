@@ -25,6 +25,8 @@ streamlit run apps/kb_admin/app.py --server.address 0.0.0.0 --server.port 8501
 
 Prefer **HTTPS and a reverse proxy** (Caddy, nginx) with **Basic Auth** or SSO when exposing beyond a trusted network. The in-app password is a light gate only.
 
+Full clone/update steps for a dedicated machine: **[deploy-ai-server.md](deploy-ai-server.md)**.
+
 ## Deploy on the inference host (recommended)
 
 Run the GUI on the **same machine** that hosts Ollama and Qdrant (lowest latency, simplest firewall story). Benefits:
