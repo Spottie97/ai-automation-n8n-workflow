@@ -25,11 +25,11 @@ streamlit run apps/kb_admin/app.py --server.address 0.0.0.0 --server.port 8501
 
 Prefer **HTTPS and a reverse proxy** (Caddy, nginx) with **Basic Auth** or SSO when exposing beyond a trusted network. The in-app password is a light gate only.
 
-## Deploy on the ai-server (recommended)
+## Deploy on the inference host (recommended)
 
-Run the GUI on the **same machine** that hosts Ollama and Qdrant (your **ai-server**). Benefits:
+Run the GUI on the **same machine** that hosts Ollama and Qdrant (lowest latency, simplest firewall story). Benefits:
 
-- Reuse the existing **`.env`** (`OLLAMA_HOST`, `QDRANT_URL` as `http://127.0.0.1:…` or `http://172.88.88.245:…` — whatever already works for `verify_stack.py`).
+- Reuse the existing **`.env`** (`OLLAMA_HOST`, `QDRANT_URL` as `http://127.0.0.1:…` or your LAN URL — whatever already works for `verify_stack.py`).
 - No need to punch firewall holes for Qdrant/Ollama from your laptop into the admin UI path.
 - Ingest and search hit the same vectors n8n uses.
 
@@ -50,7 +50,7 @@ source .venv/bin/activate
 streamlit run apps/kb_admin/app.py --server.address 0.0.0.0 --server.port 8501
 ```
 
-Then open `http://<ai-server-ip>:8501` from a browser on your LAN, **or** do not bind `0.0.0.0` and use only SSH port forward (below).
+Then open `http://YOUR_HOST:8501` from a browser on your LAN, **or** do not bind `0.0.0.0` and use only SSH port forward (below).
 
 **3. Reach it safely**
 
@@ -58,7 +58,7 @@ Pick **one** pattern:
 
 | Pattern | When to use |
 |--------|-------------|
-| **SSH local forward** | You alone, temporary: `ssh -L 8501:127.0.0.1:8501 user@ai-server` then run Streamlit on the server with `--server.address 127.0.0.1` (default) — no public port. |
+| **SSH local forward** | You alone, temporary: `ssh -L 8501:127.0.0.1:8501 user@your-server` then run Streamlit on the server with `--server.address 127.0.0.1` (default) — no public port. |
 | **Tailscale / VPN** | You trust the mesh; bind `127.0.0.1` or LAN IP; optional `KB_ADMIN_PASSWORD`. |
 | **Cloudflare Tunnel / similar** | Stable HTTPS URL without opening inbound ports; put **WAF / Access** or **Basic Auth** in front; set strong `KB_ADMIN_PASSWORD`. |
 

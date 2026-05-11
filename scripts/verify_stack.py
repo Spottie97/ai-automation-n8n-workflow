@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check Ollama, Qdrant, and llama-server reachability using the same env vars as ingest / n8n.
 
-Run from any machine that can reach the services (your laptop with .env, or ssh to the ai-server).
+Run from any machine that can reach the services (your laptop with .env, or SSH to the host running the stack).
 Exits 0 if all checks pass, non-zero otherwise.
 
 Usage:

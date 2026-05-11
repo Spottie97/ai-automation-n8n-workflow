@@ -47,7 +47,7 @@
 - Node: **HTTP Request** (POST).
 - URL: `{{$env.LLAMA_SERVER_URL}}/v1/chat/completions`
 - Headers: `Content-Type: application/json`; add `Authorization: Bearer ...` only if you enabled API keys.
-- Body (example): use `{{$env.LLAMA_CHAT_MODEL}}` — **`gemma4-e4b`** on **`8081`** (verify with `GET /v1/models` on your `LLAMA_SERVER_URL`).
+- Body (example): use `{{$env.LLAMA_CHAT_MODEL}}` — e.g. **`gemma4-e4b`** (verify with `GET /v1/models` on your `LLAMA_SERVER_URL`).
 
 ```json
 {
@@ -81,8 +81,8 @@
 Mirror `.env.example`:
 
 - `OLLAMA_HOST`, `OLLAMA_EMBED_MODEL`
-- `QDRANT_URL` (+ `QDRANT_API_KEY` if used) — default **`http://172.88.88.245:6333`** (main `qdrant` container); use **6336** only for `qdrant-farmtours`
-- `LLAMA_SERVER_URL` (e.g. **`http://172.88.88.245:8081`** for Gemma), `LLAMA_CHAT_MODEL` (e.g. `gemma4-e4b`)
+- `QDRANT_URL` (+ `QDRANT_API_KEY` if used) — e.g. **`http://127.0.0.1:6333`**; use another host/port if you run a second Qdrant instance
+- `LLAMA_SERVER_URL` (e.g. **`http://127.0.0.1:8081`**), `LLAMA_CHAT_MODEL` (e.g. `gemma4-e4b`)
 - Per-execution **client config**: collection name / `client_id`, SMTP and IMAP credentials (prefer **Credentials** store, not plaintext in nodes).
 
 ## Order of build

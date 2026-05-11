@@ -3,9 +3,9 @@
 ## Phase 1 - Foundation (Do this once)
 
 ### Infrastructure
-- [ ] Confirm llama-server reachable: **Gemma** at `172.88.88.245:8081` (automation); **Qwen** at `:8080` if needed
-- [ ] Confirm Ollama embeddings working at `172.88.88.245:11434`
-- [ ] Confirm Qdrant running (`6333` or `6336`)
+- [ ] Confirm llama-server reachable at the URL in `.env` (`LLAMA_SERVER_URL`, e.g. `http://127.0.0.1:8081`)
+- [ ] Confirm Ollama embeddings working at `OLLAMA_HOST` (e.g. `http://127.0.0.1:11434`)
+- [ ] Confirm Qdrant running at `QDRANT_URL` (default REST often `6333`)
 - [ ] Confirm n8n can reach all services (no network issues)
 - [ ] From a host with `.env`: `python scripts/verify_stack.py` → all OK
 

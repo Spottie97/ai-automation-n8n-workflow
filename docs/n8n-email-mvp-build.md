@@ -35,10 +35,10 @@ Set these so `$env.*` resolves in **HTTP Request** and **Code** nodes (n8n 1.x w
 
 | Variable | Purpose |
 |----------|---------|
-| `OLLAMA_HOST` | e.g. `http://172.88.88.245:11434` |
+| `OLLAMA_HOST` | e.g. `http://127.0.0.1:11434` (or `http://YOUR_AI_HOST:11434`) |
 | `OLLAMA_EMBED_MODEL` | e.g. `nomic-embed-text:latest` |
-| `QDRANT_URL` | e.g. `http://172.88.88.245:6333` |
-| `LLAMA_SERVER_URL` | e.g. `http://172.88.88.245:8081` (Gemma) |
+| `QDRANT_URL` | e.g. `http://127.0.0.1:6333` |
+| `LLAMA_SERVER_URL` | e.g. `http://127.0.0.1:8081` (match your llama-server / OpenAI-compatible port) |
 | `LLAMA_CHAT_MODEL` | e.g. `gemma4-e4b` |
 | `CLIENT_ID` | Qdrant collection slug (default in code: `demo_client` if unset) |
 | `SMTP_FROM` | From address for **emailSend** nodes (email workflows only) |
@@ -52,11 +52,11 @@ Optional calendar / branded HTML: fork patterns from your **Farm Tours - Email R
 
 Step-by-step HTTP payloads and n8n expressions that match **[scripts/ingest.py](../scripts/ingest.py)**, **[scripts/reply_once.py](../scripts/reply_once.py)**, and **[.env.example](../.env.example)**. For the high-level node list, see **[n8n-email-mvp-outline.md](n8n-email-mvp-outline.md)**.
 
-**Assumptions (ai-server):**
+**Assumptions (your stack):**
 
-- Ollama embeddings: `OLLAMA_HOST` (e.g. `http://172.88.88.245:11434`)
-- Qdrant REST: `QDRANT_URL` (e.g. `http://172.88.88.245:6333`)
-- Chat (Gemma): `LLAMA_SERVER_URL` = **`http://172.88.88.245:8081`**, `LLAMA_CHAT_MODEL` = **`gemma4-e4b`** (confirm with `GET …/v1/models` on **8081**; **8080** is Qwen)
+- Ollama embeddings: `OLLAMA_HOST` (e.g. `http://127.0.0.1:11434`)
+- Qdrant REST: `QDRANT_URL` (e.g. `http://127.0.0.1:6333`)
+- Chat: `LLAMA_SERVER_URL` and `LLAMA_CHAT_MODEL` must match **your** llama-server — confirm with `GET {LLAMA_SERVER_URL}/v1/models`
 
 **Collection name** per client = same sanitization as the CLI: lowercase, non-alphanumeric → `_`, matches **`ingest_mod.collection_name()`** in Python. Example: `client_id` `demo_client` → collection `demo_client`.
 
@@ -68,11 +68,11 @@ Mirror `.env.example`:
 
 | Variable | Example |
 |----------|---------|
-| `OLLAMA_HOST` | `http://172.88.88.245:11434` |
+| `OLLAMA_HOST` | `http://127.0.0.1:11434` |
 | `OLLAMA_EMBED_MODEL` | `nomic-embed-text:latest` |
-| `QDRANT_URL` | `http://172.88.88.245:6333` |
+| `QDRANT_URL` | `http://127.0.0.1:6333` |
 | `QDRANT_API_KEY` | (optional) |
-| `LLAMA_SERVER_URL` | `http://172.88.88.245:8081` |
+| `LLAMA_SERVER_URL` | `http://127.0.0.1:8081` |
 | `LLAMA_CHAT_MODEL` | `gemma4-e4b` |
 | `CLIENT_ID` | `demo_client` (must match ingest `--client-id` / collection name) |
 | `SMTP_FROM` | Your verified sender address for SMTP |
@@ -146,7 +146,7 @@ Try legacy search: `POST …/collections/{collection}/points/search` with body:
 }
 ```
 
-Test with curl against your `QDRANT_URL` once; this project’s Qdrant accepts **`/points/query`** with top-level **`query`** = vector (verified against `172.88.88.245:6333`).
+Test with curl against your `QDRANT_URL` once; this project targets **`/points/query`** with top-level **`query`** = vector (confirm against your Qdrant version if you see 404).
 
 ---
 
