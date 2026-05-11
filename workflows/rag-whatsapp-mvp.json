@@ -1,0 +1,391 @@
+{
+  "name": "RAG WhatsApp MVP (Side Hustle)",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["messages"],
+        "options": {}
+      },
+      "id": "wa-trig-0001-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [-1968, 256],
+      "webhookId": ""
+    },
+    {
+      "parameters": {},
+      "id": "wa-manual-002-b8c9-4d0e-1f2a-3b4c5d6e7f8",
+      "name": "Manual Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-1968, 448]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ts = String(Math.floor(Date.now() / 1000));\nreturn [{\n  json: {\n    messages: [{\n      from: '27123456789',\n      id: 'wamid.HBgM_mock',\n      timestamp: ts,\n      type: 'text',\n      text: { body: 'Hi, what are your opening hours this Saturday?' }\n    }],\n    contacts: [{ profile: { name: 'Demo Customer' }, wa_id: '27123456789' }]\n  }\n}];"
+      },
+      "id": "wa-mock-003-c9d0-4e1f-2a3b-4c5d6e7f8a9b",
+      "name": "Mock Inbox WhatsApp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1744, 448]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.item.json;\nconst messages = item.messages;\nif (!messages || !Array.isArray(messages) || messages.length === 0) {\n  return [];\n}\nconst m = messages[0];\nif (m.type !== 'text' || !m.text || !m.text.body) {\n  return [];\n}\nconst waFrom = String(m.from || '').replace(/\\D/g, '') || String(m.from || '');\nlet fromName = '';\nconst contacts = item.contacts;\nif (contacts && Array.isArray(contacts) && contacts.length > 0 && contacts[0].profile) {\n  fromName = String(contacts[0].profile.name || '');\n}\nconst ts = m.timestamp ? parseInt(String(m.timestamp), 10) : Math.floor(Date.now() / 1000);\nconst date = new Date(ts * 1000).toISOString();\nreturn [{\n  json: {\n    wa_from: waFrom,\n    from_name: fromName,\n    subject: '',\n    body: String(m.text.body).trim().substring(0, 8000),\n    date,\n    raw: item\n  }\n}];"
+      },
+      "id": "wa-parse-004-d0e1-4f2a-3b4c-5d6e7f8a9b0c",
+      "name": "Parse WhatsApp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1520, 352]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OLLAMA_HOST.replace(/\\/$/, '') }}/api/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.OLLAMA_EMBED_MODEL, prompt: ($json.subject || '') + '\\n' + ($json.body || '') }) }}",
+        "options": {}
+      },
+      "id": "wa-ollama-005-e1f2-4a3b-4c5d-6e7f8a9b0c1d",
+      "name": "Ollama Embeddings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1296, 352]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json;\nconst emb = raw.embedding || (raw.body && raw.body.embedding);\nif (!Array.isArray(emb)) throw new Error('Ollama response missing embedding array');\nconst p = $('Parse WhatsApp').item.json;\nconst cid = $env.CLIENT_ID;\nconst collection = (cid && String(cid).trim()) ? String(cid).trim() : 'demo_client';\nreturn [{ json: {\n  wa_from: p.wa_from,\n  from_name: p.from_name,\n  subject: p.subject,\n  body: p.body,\n  date: p.date,\n  query_embedding: emb,\n  collection,\n  chat_model: $env.LLAMA_CHAT_MODEL,\n  qdrant_url: $env.QDRANT_URL,\n  llama_url: $env.LLAMA_SERVER_URL\n} }];"
+      },
+      "id": "wa-merge-006-f2a3-4b4c-5d6e-7f8a9b0c1d2e",
+      "name": "Merge WhatsApp + Embedding",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1072, 352]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst body = {\n  query: d.query_embedding,\n  limit: 5,\n  with_payload: true\n};\nreturn [{ json: { ...d, qdrant_request_body: JSON.stringify(body) } }];"
+      },
+      "id": "wa-qbody-007-a3b4-4c5d-6e7f-8a9b0c1d2e3f",
+      "name": "Build Qdrant Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-848, 352]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.qdrant_url.replace(/\\/$/, '') }}/collections/{{ $json.collection }}/points/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.qdrant_request_body }}",
+        "options": {}
+      },
+      "id": "wa-qdrant-008-b4c5-4d6e-7f8a-9b0c1d2e3f4a",
+      "name": "Qdrant Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-624, 352]
+    },
+    {
+      "parameters": {
+        "jsCode": "const httpOut = $input.item.json;\nconst merge = $('Merge WhatsApp + Embedding').item.json;\nconst root = httpOut.body !== undefined ? httpOut.body : httpOut;\nconst res = root.result !== undefined ? root.result : root;\nconst points = Array.isArray(res.points) ? res.points : [];\nconst context = points\n  .map((p, i) => '[' + (i + 1) + '] ' + (p.payload && p.payload.text ? String(p.payload.text) : ''))\n  .filter((s) => s.length > 4)\n  .join('\\n\\n');\nreturn [{\n  json: {\n    ...merge,\n    context,\n    has_rag: points.length > 0,\n    rag_hits: points.length\n  }\n}];"
+      },
+      "id": "wa-ctx-009-c5d6-4e7f-8a9b-0c1d2e3f4a5b",
+      "name": "Build RAG Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 352]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond_has_rag_wa",
+              "leftValue": "={{ $json.has_rag }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wa-if-010-d6e7-4f8a-9b0c-1d2e3f4a5b6c",
+      "name": "Has RAG Hits?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-176, 352]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst system = 'You are a customer support assistant. Answer ONLY using the CONTEXT block below. If the answer is not in the context, say clearly that you will have a team member follow up shortly. Do not invent hours, prices, or policies. Be concise, warm, and professional. Reply in plain text only. Keep under 4000 characters (WhatsApp text limit).';\nconst userMsg = 'CONTEXT:\\n' + (d.context || '') + '\\n\\n---\\nINBOUND WHATSAPP\\nFrom: ' + (d.from_name || '') + ' (' + (d.wa_from || '') + ')\\nMessage:\\n' + (d.body || '') + '\\n\\n---\\nWrite a helpful reply to the customer.';\nconst payload = {\n  model: d.chat_model,\n  temperature: 0.3,\n  max_tokens: 1024,\n  messages: [\n    { role: 'system', content: system },\n    { role: 'user', content: userMsg }\n  ]\n};\nreturn [{ json: { ...d, llm_request_body: JSON.stringify(payload) } }];"
+      },
+      "id": "wa-llmb-011-e7f8-4a9b-0c1d-2e3f4a5b6c7d",
+      "name": "Build LLM Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [48, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.llama_url.replace(/\\/$/, '') }}/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.llm_request_body }}",
+        "options": {}
+      },
+      "id": "wa-llm-012-f8a9-4b0c-1d2e-3f4a5b6c7d8e",
+      "name": "LLM Chat (llama-server)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [272, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const llmOut = $input.item.json;\nconst ctx = $('Build RAG Context').item.json;\nconst root = llmOut.body !== undefined ? llmOut.body : llmOut;\nconst choices = root.choices || [];\nconst msg = choices[0] && choices[0].message ? choices[0].message : {};\nlet text = msg.content && String(msg.content).trim() ? String(msg.content).trim() : '';\nif (!text && msg.reasoning_content) {\n  text = String(msg.reasoning_content).trim();\n}\nconst fallback = 'Thanks for your message! I do not have enough information to answer that automatically. A team member will follow up with you shortly.';\nlet out = text || fallback;\nif (out.length > 4000) out = out.substring(0, 3997) + '...';\nreturn [{\n  json: {\n    wa_from: ctx.wa_from,\n    from_name: ctx.from_name,\n    original_subject: ctx.subject,\n    reply_text: out\n  }\n}];"
+      },
+      "id": "wa-extract-013-a9b0-4c1d-2e3f-4a5b6c7d8e9f",
+      "name": "Extract Reply Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [496, 240]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "phoneNumberId": "={{ $env.WHATSAPP_PHONE_NUMBER_ID }}",
+        "recipientPhoneNumber": "={{ $json.wa_from }}",
+        "messageType": "text",
+        "textBody": "={{ $json.reply_text }}"
+      },
+      "id": "wa-send-014-b0c1-4d2e-3f4a-5b6c7d8e9f0a",
+      "name": "Send WhatsApp Reply",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [720, 240],
+      "webhookId": ""
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "phoneNumberId": "={{ $env.WHATSAPP_PHONE_NUMBER_ID }}",
+        "recipientPhoneNumber": "={{ $json.wa_from }}",
+        "messageType": "text",
+        "textBody": "Thanks for your message! We do not have enough in our knowledge base to answer that automatically. A team member will follow up with you shortly."
+      },
+      "id": "wa-fallback-015-c1d2-4e3f-4a5b-6c7d8e9f0a1b",
+      "name": "Send Fallback WhatsApp",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [48, 480],
+      "webhookId": ""
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Mock Inbox WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock Inbox WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Parse WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Ollama Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Merge WhatsApp + Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge WhatsApp + Embedding": {
+      "main": [
+        [
+          {
+            "node": "Build Qdrant Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Qdrant Request": {
+      "main": [
+        [
+          {
+            "node": "Qdrant Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Query": {
+      "main": [
+        [
+          {
+            "node": "Build RAG Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build RAG Context": {
+      "main": [
+        [
+          {
+            "node": "Has RAG Hits?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has RAG Hits?": {
+      "main": [
+        [
+          {
+            "node": "Build LLM Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Fallback WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LLM Request": {
+      "main": [
+        [
+          {
+            "node": "LLM Chat (llama-server)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Chat (llama-server)": {
+      "main": [
+        [
+          {
+            "node": "Extract Reply Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Reply Text": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

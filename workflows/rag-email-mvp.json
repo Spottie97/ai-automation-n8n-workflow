@@ -1,0 +1,392 @@
+{
+  "name": "RAG Email MVP (Side Hustle)",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {
+          "forceReconnect": 60
+        }
+      },
+      "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "IMAP Email Trigger",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [-1968, 256],
+      "webhookId": ""
+    },
+    {
+      "parameters": {},
+      "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+      "name": "Manual Test Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-1968, 448]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    from: {\n      value: [{ address: 'customer@example.com', name: 'Demo Customer' }]\n    },\n    subject: 'Opening hours',\n    textPlain: 'Hi, what are your opening hours this Saturday?',\n    html: null,\n    date: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+      "name": "Mock Inbox Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1744, 448]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.item.json;\nconst body = item.textPlain || item.text || (item.html ? String(item.html).replace(/<[^>]*>/g, '') : '');\nconst from = item.from?.value?.[0]?.address || item.from || '';\nconst fromName = item.from?.value?.[0]?.name || '';\nconst subject = item.subject || '';\nconst date = item.date || new Date().toISOString();\nreturn [{\n  json: {\n    from_email: from,\n    from_name: fromName,\n    subject,\n    body: body.trim().substring(0, 8000),\n    date,\n    raw: item\n  }\n}];"
+      },
+      "id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+      "name": "Parse Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1520, 352]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OLLAMA_HOST.replace(/\\/$/, '') }}/api/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.OLLAMA_EMBED_MODEL, prompt: ($json.subject || '') + '\\n' + ($json.body || '') }) }}",
+        "options": {}
+      },
+      "id": "f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c",
+      "name": "Ollama Embeddings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-1296, 352]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json;\nconst emb = raw.embedding || (raw.body && raw.body.embedding);\nif (!Array.isArray(emb)) throw new Error('Ollama response missing embedding array');\nconst p = $('Parse Email').item.json;\nconst cid = $env.CLIENT_ID;\nconst collection = (cid && String(cid).trim()) ? String(cid).trim() : 'demo_client';\nreturn [{ json: {\n  from_email: p.from_email,\n  from_name: p.from_name,\n  subject: p.subject,\n  body: p.body,\n  date: p.date,\n  query_embedding: emb,\n  collection,\n  chat_model: $env.LLAMA_CHAT_MODEL,\n  qdrant_url: $env.QDRANT_URL,\n  llama_url: $env.LLAMA_SERVER_URL\n} }];"
+      },
+      "id": "07a8b9c0-d1e2-4f3a-4b5c-6d7e8f9a0b1c",
+      "name": "Merge Email + Embedding",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1072, 352]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst body = {\n  query: d.query_embedding,\n  limit: 5,\n  with_payload: true\n};\nreturn [{ json: { ...d, qdrant_request_body: JSON.stringify(body) } }];"
+      },
+      "id": "18b9c0d1-e2f3-4a4b-5c6d-7e8f9a0b1c2d",
+      "name": "Build Qdrant Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-848, 352]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.qdrant_url.replace(/\\/$/, '') }}/collections/{{ $json.collection }}/points/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.qdrant_request_body }}",
+        "options": {}
+      },
+      "id": "29c0d1e2-f3a4-4b5c-6d7e-8f9a0b1c2d3e",
+      "name": "Qdrant Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-624, 352]
+    },
+    {
+      "parameters": {
+        "jsCode": "const httpOut = $input.item.json;\nconst merge = $('Merge Email + Embedding').item.json;\nconst root = httpOut.body !== undefined ? httpOut.body : httpOut;\nconst res = root.result !== undefined ? root.result : root;\nconst points = Array.isArray(res.points) ? res.points : [];\nconst context = points\n  .map((p, i) => '[' + (i + 1) + '] ' + (p.payload && p.payload.text ? String(p.payload.text) : ''))\n  .filter((s) => s.length > 4)\n  .join('\\n\\n');\nreturn [{\n  json: {\n    ...merge,\n    context,\n    has_rag: points.length > 0,\n    rag_hits: points.length\n  }\n}];"
+      },
+      "id": "3ad1e2f3-a4b5-4c6d-7e8f-9a0b1c2d3e4f",
+      "name": "Build RAG Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 352]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond_has_rag",
+              "leftValue": "={{ $json.has_rag }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4be2f3a4-b5c6-4d7e-8f9a-0b1c2d3e4f5a",
+      "name": "Has RAG Hits?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-176, 352]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst system = 'You are a customer support assistant. Answer ONLY using the CONTEXT block below. If the answer is not in the context, say clearly that you will have a team member follow up shortly. Do not invent hours, prices, or policies. Be concise, warm, and professional. Reply in plain text only.';\nconst userMsg = 'CONTEXT:\\n' + (d.context || '') + '\\n\\n---\\nINBOUND EMAIL\\nFrom: ' + (d.from_name || '') + ' <' + (d.from_email || '') + '>\\nSubject: ' + (d.subject || '') + '\\nMessage:\\n' + (d.body || '') + '\\n\\n---\\nWrite a helpful reply to the customer.';\nconst payload = {\n  model: d.chat_model,\n  temperature: 0.3,\n  max_tokens: 1024,\n  messages: [\n    { role: 'system', content: system },\n    { role: 'user', content: userMsg }\n  ]\n};\nreturn [{ json: { ...d, llm_request_body: JSON.stringify(payload) } }];"
+      },
+      "id": "5cf3a4b5-c6d7-4e8f-9a0b-1c2d3e4f5a6b",
+      "name": "Build LLM Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [48, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.llama_url.replace(/\\/$/, '') }}/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.llm_request_body }}",
+        "options": {}
+      },
+      "id": "6da4b5c6-d7e8-4f9a-0b1c-2d3e4f5a6b7c",
+      "name": "LLM Chat (llama-server)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [272, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "const llmOut = $input.item.json;\nconst ctx = $('Build RAG Context').item.json;\nconst root = llmOut.body !== undefined ? llmOut.body : llmOut;\nconst choices = root.choices || [];\nconst msg = choices[0] && choices[0].message ? choices[0].message : {};\nlet text = msg.content && String(msg.content).trim() ? String(msg.content).trim() : '';\nif (!text && msg.reasoning_content) {\n  text = String(msg.reasoning_content).trim();\n}\nconst fallback = 'Thanks for your message. I don\\'t have enough information to answer that automatically — a team member will follow up with you shortly.';\nreturn [{\n  json: {\n    from_email: ctx.from_email,\n    from_name: ctx.from_name,\n    original_subject: ctx.subject,\n    reply_text: text || fallback\n  }\n}];"
+      },
+      "id": "7eb5c6d7-e8f9-4a0b-1c2d-3e4f5a6b7c8d",
+      "name": "Extract Reply Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [496, 240]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM }}",
+        "toEmail": "={{ $json.from_email }}",
+        "subject": "=Re: {{ $json.original_subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.reply_text }}",
+        "options": {}
+      },
+      "id": "8fc6d7e8-f9a0-4b1c-2d3e-4f5a6b7c8d9e",
+      "name": "Send Reply Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [720, 240],
+      "webhookId": ""
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM }}",
+        "toEmail": "={{ $json.from_email }}",
+        "subject": "=Re: {{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "Thanks for your message. We do not have enough in our knowledge base to answer that automatically. A team member will follow up with you shortly.",
+        "options": {}
+      },
+      "id": "90d7e8f9-a0b1-4c2d-3e4f-5a6b7c8d9e0f",
+      "name": "Send Fallback Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [48, 480],
+      "webhookId": ""
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Mock Inbox Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock Inbox Email": {
+      "main": [
+        [
+          {
+            "node": "Parse Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IMAP Email Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email": {
+      "main": [
+        [
+          {
+            "node": "Ollama Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Merge Email + Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Email + Embedding": {
+      "main": [
+        [
+          {
+            "node": "Build Qdrant Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Qdrant Request": {
+      "main": [
+        [
+          {
+            "node": "Qdrant Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Query": {
+      "main": [
+        [
+          {
+            "node": "Build RAG Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build RAG Context": {
+      "main": [
+        [
+          {
+            "node": "Has RAG Hits?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has RAG Hits?": {
+      "main": [
+        [
+          {
+            "node": "Build LLM Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Fallback Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LLM Request": {
+      "main": [
+        [
+          {
+            "node": "LLM Chat (llama-server)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Chat (llama-server)": {
+      "main": [
+        [
+          {
+            "node": "Extract Reply Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Reply Text": {
+      "main": [
+        [
+          {
+            "node": "Send Reply Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

@@ -1,0 +1,28 @@
+# Demo client: "Harborview Coffee Co." (fictional)
+
+## Hours
+We are open Monday–Friday 7:00–18:00, Saturday 8:00–17:00. We are closed on Sundays and public holidays.
+
+## Location
+We are at 42 Marine Drive, Harborview. Street parking is available; the blue bay in front is 30 minutes only.
+
+## Menu highlights
+We serve single-origin pour-over, house espresso blend, cold brew on tap, and daily pastries from a local bakery. Dairy alternatives: oat and almond.
+
+## Orders and waiting time
+Pour-over takes about 4–6 minutes at busy times. Espresso drinks are usually 2–4 minutes. During the morning rush (8:00–10:00), expect an extra few minutes.
+
+## Catering
+We offer coffee catering for offices and small events (10–80 people). Lead time is at least 5 business days. Reply with date, headcount, and dietary needs for a quote.
+
+## Refunds and issues
+If an item was wrong or unsatisfactory, tell us within 24 hours and we will remake it or offer store credit. We do not refund card purchases to cash.
+
+## Wi‑Fi
+Guest Wi‑Fi password is posted at the counter and rotates monthly; ask a barista if it does not connect.
+
+## Dogs
+Well-behaved dogs on a leash are welcome on the patio only, not inside the café.
+
+## Contact
+Email: hello@harborviewcoffee.example — we usually reply within one business day.

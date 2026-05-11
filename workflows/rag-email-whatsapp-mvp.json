@@ -1,0 +1,859 @@
+{
+  "name": "RAG Email + WhatsApp MVP (Side Hustle)",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {
+          "forceReconnect": 60
+        }
+      },
+      "id": "omni-e-imap",
+      "name": "IMAP Email Trigger",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [
+        -1968,
+        200
+      ],
+      "webhookId": ""
+    },
+    {
+      "parameters": {},
+      "id": "omni-e-man",
+      "name": "Manual Test (Email)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1968,
+        392
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    from: {\n      value: [{ address: 'customer@example.com', name: 'Demo Customer' }]\n    },\n    subject: 'Opening hours',\n    textPlain: 'Hi, what are your opening hours this Saturday?',\n    html: null,\n    date: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "omni-e-mock",
+      "name": "Mock Inbox Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1744,
+        392
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.item.json;\nconst body = item.textPlain || item.text || (item.html ? String(item.html).replace(/<[^>]*>/g, '') : '');\nconst fromVal = item.from && item.from.value && item.from.value[0] ? item.from.value[0].address : '';\nconst from = fromVal || item.from || '';\nlet fromName = '';\nif (item.from && item.from.value && item.from.value[0] && item.from.value[0].name) fromName = String(item.from.value[0].name);\nconst subject = item.subject || '';\nconst date = item.date || new Date().toISOString();\nreturn [{\n  json: {\n    from_email: from,\n    from_name: fromName,\n    subject,\n    body: body.trim().substring(0, 8000),\n    date,\n    raw: item\n  }\n}];"
+      },
+      "id": "omni-e-parse",
+      "name": "Parse Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1520,
+        296
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OLLAMA_HOST.replace(/\\/$/, '') }}/api/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.OLLAMA_EMBED_MODEL, prompt: ($json.subject || '') + '\\n' + ($json.body || '') }) }}",
+        "options": {}
+      },
+      "id": "omni-e-ollama",
+      "name": "Ollama Embeddings (Email)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1296,
+        296
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json;\nconst emb = raw.embedding || (raw.body && raw.body.embedding);\nif (!Array.isArray(emb)) throw new Error('Ollama response missing embedding array');\nconst p = $('Parse Email').item.json;\nconst cid = $env.CLIENT_ID;\nconst collection = (cid && String(cid).trim()) ? String(cid).trim() : 'demo_client';\nreturn [{ json: {\n  from_email: p.from_email,\n  from_name: p.from_name,\n  subject: p.subject,\n  body: p.body,\n  date: p.date,\n  query_embedding: emb,\n  collection,\n  chat_model: $env.LLAMA_CHAT_MODEL,\n  qdrant_url: $env.QDRANT_URL,\n  llama_url: $env.LLAMA_SERVER_URL\n} }];"
+      },
+      "id": "omni-e-merge",
+      "name": "Merge Email + Embedding",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        296
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst body = {\n  query: d.query_embedding,\n  limit: 5,\n  with_payload: true\n};\nreturn [{ json: { ...d, qdrant_request_body: JSON.stringify(body) } }];"
+      },
+      "id": "omni-e-qbody",
+      "name": "Build Qdrant Request (Email)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -848,
+        296
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.qdrant_url.replace(/\\/$/, '') }}/collections/{{ $json.collection }}/points/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.qdrant_request_body }}",
+        "options": {}
+      },
+      "id": "omni-e-qdr",
+      "name": "Qdrant Query (Email)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -624,
+        296
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const httpOut = $input.item.json;\nconst merge = $('Merge Email + Embedding').item.json;\nconst root = httpOut.body !== undefined ? httpOut.body : httpOut;\nconst res = root.result !== undefined ? root.result : root;\nconst points = Array.isArray(res.points) ? res.points : [];\nconst context = points\n  .map((p, i) => '[' + (i + 1) + '] ' + (p.payload && p.payload.text ? String(p.payload.text) : ''))\n  .filter((s) => s.length > 4)\n  .join('\\n\\n');\nreturn [{\n  json: {\n    ...merge,\n    context,\n    has_rag: points.length > 0,\n    rag_hits: points.length\n  }\n}];"
+      },
+      "id": "omni-e-ctx",
+      "name": "Build RAG Context (Email)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        296
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "omni-e-if",
+              "leftValue": "={{ $json.has_rag }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "omni-e-ifn",
+      "name": "Has RAG Hits? (Email)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        296
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst system = 'You are a customer support assistant. Answer ONLY using the CONTEXT block below. If the answer is not in the context, say clearly that you will have a team member follow up shortly. Do not invent hours, prices, or policies. Be concise, warm, and professional. Reply in plain text only.';\nconst userMsg = 'CONTEXT:\\n' + (d.context || '') + '\\n\\n---\\nINBOUND EMAIL\\nFrom: ' + (d.from_name || '') + ' <' + (d.from_email || '') + '>\\nSubject: ' + (d.subject || '') + '\\nMessage:\\n' + (d.body || '') + '\\n\\n---\\nWrite a helpful reply to the customer.';\nconst payload = {\n  model: d.chat_model,\n  temperature: 0.3,\n  max_tokens: 1024,\n  messages: [\n    { role: 'system', content: system },\n    { role: 'user', content: userMsg }\n  ]\n};\nreturn [{ json: { ...d, llm_request_body: JSON.stringify(payload) } }];"
+      },
+      "id": "omni-e-llmb",
+      "name": "Build LLM Request (Email)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        184
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.llama_url.replace(/\\/$/, '') }}/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.llm_request_body }}",
+        "options": {}
+      },
+      "id": "omni-e-llm",
+      "name": "LLM Chat (llama-server) (Email)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        272,
+        184
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const llmOut = $input.item.json;\nconst ctx = $('Build RAG Context (Email)').item.json;\nconst root = llmOut.body !== undefined ? llmOut.body : llmOut;\nconst choices = root.choices || [];\nconst msg = choices[0] && choices[0].message ? choices[0].message : {};\nlet text = msg.content && String(msg.content).trim() ? String(msg.content).trim() : '';\nif (!text && msg.reasoning_content) {\n  text = String(msg.reasoning_content).trim();\n}\nconst fallback = 'Thanks for your message. I don\\'t have enough information to answer that automatically \u2014 a team member will follow up with you shortly.';\nreturn [{\n  json: {\n    from_email: ctx.from_email,\n    from_name: ctx.from_name,\n    original_subject: ctx.subject,\n    reply_text: text || fallback\n  }\n}];"
+      },
+      "id": "omni-e-ext",
+      "name": "Extract Reply Text (Email)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        184
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM }}",
+        "toEmail": "={{ $json.from_email }}",
+        "subject": "=Re: {{ $json.original_subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.reply_text }}",
+        "options": {}
+      },
+      "id": "omni-e-send",
+      "name": "Send Reply Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        720,
+        184
+      ],
+      "webhookId": ""
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM }}",
+        "toEmail": "={{ $json.from_email }}",
+        "subject": "=Re: {{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "Thanks for your message. We do not have enough in our knowledge base to answer that automatically. A team member will follow up with you shortly.",
+        "options": {}
+      },
+      "id": "omni-e-fb",
+      "name": "Send Fallback Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        48,
+        424
+      ],
+      "webhookId": ""
+    },
+    {
+      "parameters": {
+        "updates": [
+          "messages"
+        ],
+        "options": {}
+      },
+      "id": "omni-w-trig",
+      "name": "WhatsApp Trigger",
+      "type": "n8n-nodes-base.whatsAppTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1968,
+        680
+      ],
+      "webhookId": ""
+    },
+    {
+      "parameters": {},
+      "id": "omni-w-man",
+      "name": "Manual Test (WhatsApp)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1968,
+        872
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ts = String(Math.floor(Date.now() / 1000));\nreturn [{\n  json: {\n    messages: [{\n      from: '27123456789',\n      id: 'wamid.HBgM_mock',\n      timestamp: ts,\n      type: 'text',\n      text: { body: 'Hi, what are your opening hours this Saturday?' }\n    }],\n    contacts: [{ profile: { name: 'Demo Customer' }, wa_id: '27123456789' }]\n  }\n}];"
+      },
+      "id": "omni-w-mock",
+      "name": "Mock Inbox WhatsApp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1744,
+        872
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.item.json;\nconst messages = item.messages;\nif (!messages || !Array.isArray(messages) || messages.length === 0) {\n  return [];\n}\nconst m = messages[0];\nif (m.type !== 'text' || !m.text || !m.text.body) {\n  return [];\n}\nconst waFrom = String(m.from || '').replace(/\\D/g, '') || String(m.from || '');\nlet fromName = '';\nconst contacts = item.contacts;\nif (contacts && Array.isArray(contacts) && contacts.length > 0 && contacts[0].profile) {\n  fromName = String(contacts[0].profile.name || '');\n}\nconst ts = m.timestamp ? parseInt(String(m.timestamp), 10) : Math.floor(Date.now() / 1000);\nconst date = new Date(ts * 1000).toISOString();\nreturn [{\n  json: {\n    wa_from: waFrom,\n    from_name: fromName,\n    subject: '',\n    body: String(m.text.body).trim().substring(0, 8000),\n    date,\n    raw: item\n  }\n}];"
+      },
+      "id": "omni-w-parse",
+      "name": "Parse WhatsApp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1520,
+        776
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.OLLAMA_HOST.replace(/\\/$/, '') }}/api/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: $env.OLLAMA_EMBED_MODEL, prompt: ($json.subject || '') + '\\n' + ($json.body || '') }) }}",
+        "options": {}
+      },
+      "id": "omni-w-ollama",
+      "name": "Ollama Embeddings (WhatsApp)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1296,
+        776
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json;\nconst emb = raw.embedding || (raw.body && raw.body.embedding);\nif (!Array.isArray(emb)) throw new Error('Ollama response missing embedding array');\nconst p = $('Parse WhatsApp').item.json;\nconst cid = $env.CLIENT_ID;\nconst collection = (cid && String(cid).trim()) ? String(cid).trim() : 'demo_client';\nreturn [{ json: {\n  wa_from: p.wa_from,\n  from_name: p.from_name,\n  subject: p.subject,\n  body: p.body,\n  date: p.date,\n  query_embedding: emb,\n  collection,\n  chat_model: $env.LLAMA_CHAT_MODEL,\n  qdrant_url: $env.QDRANT_URL,\n  llama_url: $env.LLAMA_SERVER_URL\n} }];"
+      },
+      "id": "omni-w-merge",
+      "name": "Merge WhatsApp + Embedding",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        776
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst body = {\n  query: d.query_embedding,\n  limit: 5,\n  with_payload: true\n};\nreturn [{ json: { ...d, qdrant_request_body: JSON.stringify(body) } }];"
+      },
+      "id": "omni-w-qbody",
+      "name": "Build Qdrant Request (WhatsApp)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -848,
+        776
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.qdrant_url.replace(/\\/$/, '') }}/collections/{{ $json.collection }}/points/query",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.qdrant_request_body }}",
+        "options": {}
+      },
+      "id": "omni-w-qdr",
+      "name": "Qdrant Query (WhatsApp)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -624,
+        776
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const httpOut = $input.item.json;\nconst merge = $('Merge WhatsApp + Embedding').item.json;\nconst root = httpOut.body !== undefined ? httpOut.body : httpOut;\nconst res = root.result !== undefined ? root.result : root;\nconst points = Array.isArray(res.points) ? res.points : [];\nconst context = points\n  .map((p, i) => '[' + (i + 1) + '] ' + (p.payload && p.payload.text ? String(p.payload.text) : ''))\n  .filter((s) => s.length > 4)\n  .join('\\n\\n');\nreturn [{\n  json: {\n    ...merge,\n    context,\n    has_rag: points.length > 0,\n    rag_hits: points.length\n  }\n}];"
+      },
+      "id": "omni-w-ctx",
+      "name": "Build RAG Context (WhatsApp)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        776
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "omni-w-if",
+              "leftValue": "={{ $json.has_rag }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "omni-w-ifn",
+      "name": "Has RAG Hits? (WhatsApp)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -176,
+        776
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const d = $input.item.json;\nconst system = 'You are a customer support assistant. Answer ONLY using the CONTEXT block below. If the answer is not in the context, say clearly that you will have a team member follow up shortly. Do not invent hours, prices, or policies. Be concise, warm, professional. Plain text only. Under 4000 characters (WhatsApp limit).';\nconst userMsg = 'CONTEXT:\\n' + (d.context || '') + '\\n\\n---\\nINBOUND WHATSAPP\\nFrom: ' + (d.from_name || '') + ' (' + (d.wa_from || '') + ')\\nMessage:\\n' + (d.body || '') + '\\n\\n---\\nWrite a helpful reply.';\nconst payload = {\n  model: d.chat_model,\n  temperature: 0.3,\n  max_tokens: 1024,\n  messages: [\n    { role: 'system', content: system },\n    { role: 'user', content: userMsg }\n  ]\n};\nreturn [{ json: { ...d, llm_request_body: JSON.stringify(payload) } }];"
+      },
+      "id": "omni-w-llmb",
+      "name": "Build LLM Request (WhatsApp)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        48,
+        664
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.llama_url.replace(/\\/$/, '') }}/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.llm_request_body }}",
+        "options": {}
+      },
+      "id": "omni-w-llm",
+      "name": "LLM Chat (llama-server) (WhatsApp)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        272,
+        664
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const llmOut = $input.item.json;\nconst ctx = $('Build RAG Context (WhatsApp)').item.json;\nconst root = llmOut.body !== undefined ? llmOut.body : llmOut;\nconst choices = root.choices || [];\nconst msg = choices[0] && choices[0].message ? choices[0].message : {};\nlet text = msg.content && String(msg.content).trim() ? String(msg.content).trim() : '';\nif (!text && msg.reasoning_content) {\n  text = String(msg.reasoning_content).trim();\n}\nconst fallback = 'Thanks for your message! I do not have enough information to answer that automatically. A team member will follow up with you shortly.';\nlet out = text || fallback;\nif (out.length > 4000) out = out.substring(0, 3997) + '...';\nreturn [{\n  json: {\n    wa_from: ctx.wa_from,\n    from_name: ctx.from_name,\n    original_subject: ctx.subject,\n    reply_text: out\n  }\n}];"
+      },
+      "id": "omni-w-ext",
+      "name": "Extract Reply Text (WhatsApp)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        496,
+        664
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "phoneNumberId": "={{ $env.WHATSAPP_PHONE_NUMBER_ID }}",
+        "recipientPhoneNumber": "={{ $json.wa_from }}",
+        "messageType": "text",
+        "textBody": "={{ $json.reply_text }}"
+      },
+      "id": "omni-w-send",
+      "name": "Send WhatsApp Reply",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        664
+      ],
+      "webhookId": ""
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "phoneNumberId": "={{ $env.WHATSAPP_PHONE_NUMBER_ID }}",
+        "recipientPhoneNumber": "={{ $json.wa_from }}",
+        "messageType": "text",
+        "textBody": "Thanks for your message! We do not have enough in our knowledge base to answer that automatically. A team member will follow up with you shortly."
+      },
+      "id": "omni-w-fb",
+      "name": "Send Fallback WhatsApp",
+      "type": "n8n-nodes-base.whatsApp",
+      "typeVersion": 1.1,
+      "position": [
+        48,
+        904
+      ],
+      "webhookId": ""
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Test (Email)": {
+      "main": [
+        [
+          {
+            "node": "Mock Inbox Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock Inbox Email": {
+      "main": [
+        [
+          {
+            "node": "Parse Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IMAP Email Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email": {
+      "main": [
+        [
+          {
+            "node": "Ollama Embeddings (Email)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Embeddings (Email)": {
+      "main": [
+        [
+          {
+            "node": "Merge Email + Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Email + Embedding": {
+      "main": [
+        [
+          {
+            "node": "Build Qdrant Request (Email)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Qdrant Request (Email)": {
+      "main": [
+        [
+          {
+            "node": "Qdrant Query (Email)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Query (Email)": {
+      "main": [
+        [
+          {
+            "node": "Build RAG Context (Email)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build RAG Context (Email)": {
+      "main": [
+        [
+          {
+            "node": "Has RAG Hits? (Email)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has RAG Hits? (Email)": {
+      "main": [
+        [
+          {
+            "node": "Build LLM Request (Email)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Fallback Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LLM Request (Email)": {
+      "main": [
+        [
+          {
+            "node": "LLM Chat (llama-server) (Email)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Chat (llama-server) (Email)": {
+      "main": [
+        [
+          {
+            "node": "Extract Reply Text (Email)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Reply Text (Email)": {
+      "main": [
+        [
+          {
+            "node": "Send Reply Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test (WhatsApp)": {
+      "main": [
+        [
+          {
+            "node": "Mock Inbox WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock Inbox WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Parse WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WhatsApp Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Ollama Embeddings (WhatsApp)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Embeddings (WhatsApp)": {
+      "main": [
+        [
+          {
+            "node": "Merge WhatsApp + Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge WhatsApp + Embedding": {
+      "main": [
+        [
+          {
+            "node": "Build Qdrant Request (WhatsApp)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Qdrant Request (WhatsApp)": {
+      "main": [
+        [
+          {
+            "node": "Qdrant Query (WhatsApp)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Query (WhatsApp)": {
+      "main": [
+        [
+          {
+            "node": "Build RAG Context (WhatsApp)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build RAG Context (WhatsApp)": {
+      "main": [
+        [
+          {
+            "node": "Has RAG Hits? (WhatsApp)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has RAG Hits? (WhatsApp)": {
+      "main": [
+        [
+          {
+            "node": "Build LLM Request (WhatsApp)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Fallback WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LLM Request (WhatsApp)": {
+      "main": [
+        [
+          {
+            "node": "LLM Chat (llama-server) (WhatsApp)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Chat (llama-server) (WhatsApp)": {
+      "main": [
+        [
+          {
+            "node": "Extract Reply Text (WhatsApp)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Reply Text (WhatsApp)": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

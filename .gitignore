@@ -216,3 +216,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Secrets and local ops (do not commit)
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+docs/*.local.md
+
+# macOS
+.DS_Store
