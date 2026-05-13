@@ -35,9 +35,37 @@ flowchart LR
 2. **Caddy** — `127.0.0.1:8089` with Basic Auth → proxy to `8501` — [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example)
 3. **`cloudflared`** — ingress hostname → `http://127.0.0.1:8089` — [deploy/cloudflared/config.yml.example](../deploy/cloudflared/config.yml.example)
 
-## 1. Install cloudflared (on ai-server)
+## 1. Install cloudflared (Ubuntu server)
 
-Official install: [Install cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/).
+Use Cloudflare’s **APT** repo (works on Ubuntu LTS and current Debian-derived releases). Full options: [Install cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/).
+
+```bash
+# 1) Cloudflare package signing key
+sudo mkdir -p --mode=0755 /usr/share/keyrings
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+
+# 2) APT source for cloudflared (needs distro codename, e.g. jammy, noble)
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(. /etc/os-release && echo "$VERSION_CODENAME") main" \
+  | sudo tee /etc/apt/sources.list.d/cloudflared.list
+
+# 3) Install
+sudo apt-get update
+sudo apt-get install -y cloudflared
+
+# 4) Confirm
+cloudflared --version
+```
+
+If **`VERSION_CODENAME`** is empty on a minimal image, install `lsb-release` and use `$(lsb_release -cs)` instead, or set the codename manually (e.g. `noble` for Ubuntu 24.04, `jammy` for 22.04):
+
+```bash
+sudo apt-get install -y lsb-release
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" \
+  | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt-get update && sudo apt-get install -y cloudflared
+```
+
+**Alternative (no APT):** download a `.deb` for your architecture from the [downloads page](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) and run `sudo apt install ./cloudflared_*_amd64.deb` (adjust filename).
 
 ## 2. Authenticate and create a tunnel
 
