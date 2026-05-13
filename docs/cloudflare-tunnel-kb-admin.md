@@ -2,9 +2,9 @@
 
 Goal: **no open inbound ports** on the ai-server. **TLS** terminates at Cloudflare. **cloudflared** dials out. A **loopback-only Caddy** instance adds **HTTP Basic Auth** (username + password — you can use your email as the username), then proxies to **Streamlit on `127.0.0.1:8501`**.
 
-This runbook matches **`kb.reinhardterasmus.info`** → tunnel → **`http://127.0.0.1:8089`** (Caddy) → Streamlit.
+This runbook matches `**kb.reinhardterasmus.info**` → tunnel → `**http://127.0.0.1:8089**` (Caddy) → Streamlit.
 
-We are **not** using Cloudflare Access here; auth is **only** Basic Auth at Caddy plus optional **`KB_ADMIN_PASSWORD`** inside Streamlit.
+We are **not** using Cloudflare Access here; auth is **only** Basic Auth at Caddy plus optional `**KB_ADMIN_PASSWORD`** inside Streamlit.
 
 ## Architecture
 
@@ -22,18 +22,20 @@ flowchart LR
   caddy --> streamlit
 ```
 
+
+
 ## Prerequisites
 
 - DNS zone **reinhardterasmus.info** on Cloudflare.
 - Repo on `ai-server` with working `.env` (`verify_stack.py` passes).
-- Streamlit KB admin bound to **`127.0.0.1:8501`** only — [deploy/systemd/kb-admin.service.example](../deploy/systemd/kb-admin.service.example).
-- Set **`KB_ADMIN_PASSWORD`** in `.env` for an in-app gate after Basic Auth (recommended).
+- Streamlit KB admin bound to `**127.0.0.1:8501`** only — [deploy/systemd/kb-admin.service.example](../deploy/systemd/kb-admin.service.example).
+- Set `**KB_ADMIN_PASSWORD**` in `.env` for an in-app gate after Basic Auth (recommended).
 
 ## 0. Start order on the server
 
-1. **`kb-admin.service`** — Streamlit on `127.0.0.1:8501`
-2. **Caddy** — `127.0.0.1:8089` with Basic Auth → proxy to `8501` — [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example)
-3. **`cloudflared`** — ingress hostname → `http://127.0.0.1:8089` — [deploy/cloudflared/config.yml.example](../deploy/cloudflared/config.yml.example)
+1. `**kb-admin.service**` — Streamlit on `127.0.0.1:8501`
+2. **Caddy** — `http://127.0.0.1:8089` (plain HTTP on loopback) with Basic Auth → proxy to `8501` — [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example)
+3. `**cloudflared`** — ingress hostname → `http://127.0.0.1:8089` — [deploy/cloudflared/config.yml.example](../deploy/cloudflared/config.yml.example)
 
 ## 1. Install cloudflared (Ubuntu server)
 
@@ -56,7 +58,7 @@ sudo apt-get install -y cloudflared
 cloudflared --version
 ```
 
-If **`VERSION_CODENAME`** is empty on a minimal image, install `lsb-release` and use `$(lsb_release -cs)` instead, or set the codename manually (e.g. `noble` for Ubuntu 24.04, `jammy` for 22.04):
+If `**VERSION_CODENAME**` is empty on a minimal image, install `lsb-release` and use `$(lsb_release -cs)` instead, or set the codename manually (e.g. `noble` for Ubuntu 24.04, `jammy` for 22.04):
 
 ```bash
 sudo apt-get install -y lsb-release
@@ -84,45 +86,38 @@ cloudflared tunnel route dns kb-admin kb.reinhardterasmus.info
 
 ## 4. Install Caddy and Basic Auth
 
-### 4a. Install Caddy (Debian / Ubuntu / Raspbian)
-
-Official steps: [Install Caddy — Debian, Ubuntu, Raspbian](https://caddyserver.com/docs/install#debian-ubuntu-raspbian).
-
-Stable release (copy-paste):
-
-```bash
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-sudo chmod o+r /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update
-sudo apt install -y caddy
-caddy version
-```
-
-The package enables a **`caddy`** systemd service and a default config. For this KB-admin setup you will either **stop/disable** the default `caddy` service and run a **separate** unit with only [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example) (see [deploy/systemd/caddy-kb-proxy.service.example](../deploy/systemd/caddy-kb-proxy.service.example)), or merge the loopback `127.0.0.1:8089` block into `/etc/caddy/Caddyfile` if you prefer one Caddy process. Read [Using the service](https://caddyserver.com/docs/running#using-the-service) so reloads match how you edit the file.
-
-### 4b. Basic Auth in front of Streamlit
-
-1. Generate a bcrypt hash for your password:
-
+1. Install Caddy: [Install Caddy](https://caddyserver.com/docs/install).
+2. Generate a bcrypt hash for your password:
    ```bash
    caddy hash-password
    ```
+3. Copy [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example) to the server (e.g. `/etc/caddy/kb-admin.Caddyfile`) and merge or `import` into `/etc/caddy/Caddyfile`. Replace `your_username` with a short username **or** your email (if login fails with an email, use a short username).
+4. Replace the `$2a$14$...` placeholder with the hash from step 2.
 
-2. Copy [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example) to the server (e.g. `/etc/caddy/kb-admin.Caddyfile`). Replace `your_username` with a short username **or** your email (some browsers handle `user@domain` in Basic Auth; if login fails, use a simple username).
-3. Replace the `$2a$14$...` placeholder with the hash from step 1.
-4. Run Caddy with that config (see [deploy/caddy/README.md](../deploy/caddy/README.md)). Optional dedicated unit: [deploy/systemd/caddy-kb-proxy.service.example](../deploy/systemd/caddy-kb-proxy.service.example).
+**Critical:** the site line must be **`http://127.0.0.1:8089`** (with the `http://` prefix). If you write only `127.0.0.1:8089`, Caddy may enable **automatic HTTPS** for `127.0.0.1`, issue a **local CA** cert, and try **`sudo`** to install it — the `caddy` user is not in sudoers, so you see `pki.ca.local` / `failed to install root certificate` in `journalctl`.
 
-**Do not** bind Caddy to `0.0.0.0` for this use case; keep **`127.0.0.1:8089`**.
+5. Validate and reload:
+   ```bash
+   sudo caddy validate --config /etc/caddy/Caddyfile
+   sudo systemctl reload caddy
+   ```
+
+**Do not** bind this site to `0.0.0.0`; keep loopback only. Optional dedicated unit: [deploy/systemd/caddy-kb-proxy.service.example](../deploy/systemd/caddy-kb-proxy.service.example).
+
+### After fix — logs should look quiet
+
+Reload and check: you want **no** `tls.obtain` / `automatic TLS certificate management` lines for `127.0.0.1` on port 8089, and **no** `sudo` / `pki.ca.local` errors.
+
+```bash
+sudo journalctl -u caddy -n 30 --no-pager
+```
 
 ## 5. Tunnel config
 
 Copy [deploy/cloudflared/config.yml.example](../deploy/cloudflared/config.yml.example) to `~/.cloudflared/config.yml` (or `/etc/cloudflared/config.yml`), set `tunnel`, `credentials-file`, and confirm:
 
-- **`hostname`:** `kb.reinhardterasmus.info`
-- **`service`:** `http://127.0.0.1:8089` (Caddy — **not** Streamlit directly)
+- `**hostname`:** `kb.reinhardterasmus.info`
+- `**service`:** `http://127.0.0.1:8089` (Caddy — **not** Streamlit directly)
 
 Test manually:
 
@@ -143,8 +138,8 @@ Ensure the service reads your `config.yml` path per Cloudflare docs.
 
 ## 7. Verification
 
-- On server: `ss -tlnp | grep -E '8501|8089'` — expect **`127.0.0.1:8501`** (Streamlit) and **`127.0.0.1:8089`** (Caddy), not `0.0.0.0` for public exposure.
-- From the internet: open **`https://kb.reinhardterasmus.info`** — browser should prompt for **Basic Auth**, then Streamlit (and optionally `KB_ADMIN_PASSWORD` if set).
+- On server: `ss -tlnp | grep -E '8501|8089'` — expect `**127.0.0.1:8501**` (Streamlit) and `**127.0.0.1:8089**` (Caddy), not `0.0.0.0` for public exposure.
+- From the internet: open `**https://kb.reinhardterasmus.info**` — browser should prompt for **Basic Auth**, then Streamlit (and optionally `KB_ADMIN_PASSWORD` if set).
 
 ## 8. Optional: Cloudflare Access later
 
@@ -159,3 +154,4 @@ This tunnel is **only** for the KB admin UI. **Do not** expose Qdrant REST to th
 - [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/)
 - [Caddy basic_auth](https://caddyserver.com/docs/caddyfile/directives/basic_auth)
 - [kb-admin.md](kb-admin.md)
+
