@@ -84,16 +84,36 @@ cloudflared tunnel route dns kb-admin kb.reinhardterasmus.info
 
 ## 4. Install Caddy and Basic Auth
 
-1. Install Caddy: [Install Caddy](https://caddyserver.com/docs/install).
-2. Generate a bcrypt hash for your password:
+### 4a. Install Caddy (Debian / Ubuntu / Raspbian)
+
+Official steps: [Install Caddy — Debian, Ubuntu, Raspbian](https://caddyserver.com/docs/install#debian-ubuntu-raspbian).
+
+Stable release (copy-paste):
+
+```bash
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+sudo chmod o+r /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update
+sudo apt install -y caddy
+caddy version
+```
+
+The package enables a **`caddy`** systemd service and a default config. For this KB-admin setup you will either **stop/disable** the default `caddy` service and run a **separate** unit with only [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example) (see [deploy/systemd/caddy-kb-proxy.service.example](../deploy/systemd/caddy-kb-proxy.service.example)), or merge the loopback `127.0.0.1:8089` block into `/etc/caddy/Caddyfile` if you prefer one Caddy process. Read [Using the service](https://caddyserver.com/docs/running#using-the-service) so reloads match how you edit the file.
+
+### 4b. Basic Auth in front of Streamlit
+
+1. Generate a bcrypt hash for your password:
 
    ```bash
    caddy hash-password
    ```
 
-3. Copy [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example) to the server (e.g. `/etc/caddy/kb-admin.Caddyfile`). Replace `your_username` with a short username **or** your email (some browsers handle `user@domain` in Basic Auth; if login fails, use a simple username).
-4. Replace the `$2a$14$...` placeholder with the hash from step 2.
-5. Run Caddy with that config (see [deploy/caddy/README.md](../deploy/caddy/README.md)). Optional systemd: [deploy/systemd/caddy-kb-proxy.service.example](../deploy/systemd/caddy-kb-proxy.service.example).
+2. Copy [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example) to the server (e.g. `/etc/caddy/kb-admin.Caddyfile`). Replace `your_username` with a short username **or** your email (some browsers handle `user@domain` in Basic Auth; if login fails, use a simple username).
+3. Replace the `$2a$14$...` placeholder with the hash from step 1.
+4. Run Caddy with that config (see [deploy/caddy/README.md](../deploy/caddy/README.md)). Optional dedicated unit: [deploy/systemd/caddy-kb-proxy.service.example](../deploy/systemd/caddy-kb-proxy.service.example).
 
 **Do not** bind Caddy to `0.0.0.0` for this use case; keep **`127.0.0.1:8089`**.
 
