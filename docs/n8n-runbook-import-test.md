@@ -1,6 +1,6 @@
 # Runbook — import workflows and manual test
 
-Use this after **[docs/n8n-email-mvp-build.md](n8n-email-mvp-build.md)** for a repeatable smoke test.
+Use this after **[docs/n8n-email-mvp-build.md](n8n-email-mvp-build.md)** for a repeatable smoke test. For a phased go-live (email → WhatsApp → combined), see **[n8n-go-live-checklist.md](n8n-go-live-checklist.md)**.
 
 ## 0. Prerequisites
 

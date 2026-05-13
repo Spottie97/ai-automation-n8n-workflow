@@ -1,6 +1,10 @@
-# KB admin behind Cloudflare Tunnel (HTTPS + Access or Basic Auth)
+# KB admin behind Cloudflare Tunnel (HTTPS + Basic Auth)
 
-Goal: **no open inbound ports** on the ai-server. Only **localhost** serves Streamlit; **cloudflared** dials out to Cloudflare; users hit **HTTPS** on your zone. Lock the app with **Cloudflare Access** (recommended) or **Basic Auth** in a tiny local reverse proxy.
+Goal: **no open inbound ports** on the ai-server. **TLS** terminates at Cloudflare. **cloudflared** dials out. A **loopback-only Caddy** instance adds **HTTP Basic Auth** (username + password — you can use your email as the username), then proxies to **Streamlit on `127.0.0.1:8501`**.
+
+This runbook matches **`kb.reinhardterasmus.info`** → tunnel → **`http://127.0.0.1:8089`** (Caddy) → Streamlit.
+
+We are **not** using Cloudflare Access here; auth is **only** Basic Auth at Caddy plus optional **`KB_ADMIN_PASSWORD`** inside Streamlit.
 
 ## Architecture
 
@@ -8,135 +12,102 @@ Goal: **no open inbound ports** on the ai-server. Only **localhost** serves Stre
 flowchart LR
   user[Browser]
   edge[Cloudflare_Edge]
-  access[Access_or_WAF]
   tunnel[cloudflared_on_server]
-  st[Streamlit_127.0.0.1_8501]
+  caddy[Caddy_127_0_0_1_8089_BasicAuth]
+  streamlit[Streamlit_127_0_0_1_8501]
 
   user -->|HTTPS| edge
-  edge --> access
-  access --> tunnel
-  tunnel -->|HTTP_loopback| st
+  edge --> tunnel
+  tunnel -->|HTTP_loopback| caddy
+  caddy --> streamlit
 ```
 
 ## Prerequisites
 
-- A **Cloudflare zone** (your domain DNS on Cloudflare).
-- **Streamlit KB admin** running on the server **only** on `127.0.0.1:8501` (see [deploy/systemd/kb-admin.service.example](../deploy/systemd/kb-admin.service.example)).
-- Set **`KB_ADMIN_PASSWORD`** in `.env` as an extra layer (not sufficient alone on the public internet).
+- DNS zone **reinhardterasmus.info** on Cloudflare.
+- Repo on `ai-server` with working `.env` (`verify_stack.py` passes).
+- Streamlit KB admin bound to **`127.0.0.1:8501`** only — [deploy/systemd/kb-admin.service.example](../deploy/systemd/kb-admin.service.example).
+- Set **`KB_ADMIN_PASSWORD`** in `.env` for an in-app gate after Basic Auth (recommended).
+
+## 0. Start order on the server
+
+1. **`kb-admin.service`** — Streamlit on `127.0.0.1:8501`
+2. **Caddy** — `127.0.0.1:8089` with Basic Auth → proxy to `8501` — [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example)
+3. **`cloudflared`** — ingress hostname → `http://127.0.0.1:8089` — [deploy/cloudflared/config.yml.example](../deploy/cloudflared/config.yml.example)
 
 ## 1. Install cloudflared (on ai-server)
 
-Follow the current official install steps: [Connect networks · Install cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/).
-
-Example (Debian/Ubuntu — verify against docs; package name may change):
-
-```bash
-# Example only — prefer the official download page for your OS/arch
-sudo mkdir -p --mode=0755 /usr/share/keyrings
-curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
-# ... then add apt repo per Cloudflare docs, install cloudflared
-```
+Official install: [Install cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/).
 
 ## 2. Authenticate and create a tunnel
-
-On the server (browser or token flow per docs):
 
 ```bash
 cloudflared tunnel login
 cloudflared tunnel create kb-admin
 ```
 
-Note the **tunnel UUID** and the **credentials JSON** path (often `~/.cloudflared/<UUID>.json`).
+Save the **tunnel UUID** and **credentials JSON** path (often `~/.cloudflared/<UUID>.json`).
 
 ## 3. Public hostname (DNS)
 
-Create a DNS record for the tunnel (replace zone/subdomain):
-
 ```bash
-cloudflared tunnel route dns kb-admin kb-admin.example.com
+cloudflared tunnel route dns kb-admin kb.reinhardterasmus.info
 ```
 
-Use a **non-obvious hostname**; avoid names like `qdrant` or `admin` in the URL if you care about discovery.
+## 4. Install Caddy and Basic Auth
 
-## 4. Tunnel config
+1. Install Caddy: [Install Caddy](https://caddyserver.com/docs/install).
+2. Generate a bcrypt hash for your password:
 
-Create `~/.cloudflared/config.yml` (or `/etc/cloudflared/config.yml` for a system install). See stub: [deploy/cloudflared/config.yml.example](../deploy/cloudflared/config.yml.example).
+   ```bash
+   caddy hash-password
+   ```
 
-Minimal shape:
+3. Copy [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example) to the server (e.g. `/etc/caddy/kb-admin.Caddyfile`). Replace `your_username` with a short username **or** your email (some browsers handle `user@domain` in Basic Auth; if login fails, use a simple username).
+4. Replace the `$2a$14$...` placeholder with the hash from step 2.
+5. Run Caddy with that config (see [deploy/caddy/README.md](../deploy/caddy/README.md)). Optional systemd: [deploy/systemd/caddy-kb-proxy.service.example](../deploy/systemd/caddy-kb-proxy.service.example).
 
-```yaml
-tunnel: YOUR_TUNNEL_UUID
-credentials-file: /home/reinhardt/.cloudflared/YOUR_TUNNEL_UUID.json
+**Do not** bind Caddy to `0.0.0.0` for this use case; keep **`127.0.0.1:8089`**.
 
-ingress:
-  - hostname: kb-admin.example.com
-    service: http://127.0.0.1:8501
-  - service: http_status:404
-```
+## 5. Tunnel config
 
-If you add **Basic Auth** locally (next section), point `service` at that proxy port instead (e.g. `http://127.0.0.1:8089`).
+Copy [deploy/cloudflared/config.yml.example](../deploy/cloudflared/config.yml.example) to `~/.cloudflared/config.yml` (or `/etc/cloudflared/config.yml`), set `tunnel`, `credentials-file`, and confirm:
 
-Test:
+- **`hostname`:** `kb.reinhardterasmus.info`
+- **`service`:** `http://127.0.0.1:8089` (Caddy — **not** Streamlit directly)
+
+Test manually:
 
 ```bash
 cloudflared tunnel run kb-admin
 ```
 
-## 5. Lock with Cloudflare Access (recommended)
-
-In **Cloudflare Zero Trust** dashboard:
-
-1. **Access** → **Applications** → **Add an application**.
-2. Choose **Self-hosted**; **Application domain** = `kb-admin.example.com` (same as tunnel hostname).
-3. Add an **Access policy** (e.g. allow emails ending in `@yourcompany.com`, or OTP to specific addresses).
-
-Traffic is **TLS-terminated at Cloudflare**; Access runs **before** the tunnel forwards to your origin. No Basic Auth needed on the box if Access is enough.
-
-## 6. Alternative: Basic Auth on localhost
-
-If you prefer not to use Access, put a small proxy **only on loopback** in front of Streamlit.
-
-**Example (Caddy)** — listen on loopback only; use `caddy hash-password` for a bcrypt hash, then see [Caddy basicauth](https://caddyserver.com/docs/caddyfile/directives/basicauth) for your Caddy version:
-
-```caddy
-127.0.0.1:8089 {
-  basicauth /* {
-    youruser $2a$14$...
-  }
-  reverse_proxy 127.0.0.1:8501
-}
-```
-
-Then set tunnel ingress `service: http://127.0.0.1:8089`.
-
-**Example (nginx)** — `auth_basic` + `proxy_pass` to `http://127.0.0.1:8501`, listen `127.0.0.1:8089`.
-
-Do **not** bind this proxy to `0.0.0.0` unless you fully understand the risk; tunnel → loopback is the point.
-
-## 7. Run cloudflared as a service
+## 6. Run cloudflared as a service
 
 Follow: [Run as a service · cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/local-management/as-a-service/).
-
-Typical pattern after install:
 
 ```bash
 sudo cloudflared service install
 sudo systemctl enable --now cloudflared
 ```
 
-Ensure the service reads your **config path** (set in the unit or default location per docs).
+Ensure the service reads your `config.yml` path per Cloudflare docs.
 
-## 8. Verification
+## 7. Verification
 
-- From the internet (or phone off Wi‑Fi): open `https://kb-admin.example.com` — expect Access login or Basic Auth, then Streamlit.
-- On server: `ss -tlnp | grep 8501` — Streamlit should be **127.0.0.1:8501**, not `0.0.0.0`, unless you intentionally LAN-bind (not required with tunnel).
+- On server: `ss -tlnp | grep -E '8501|8089'` — expect **`127.0.0.1:8501`** (Streamlit) and **`127.0.0.1:8089`** (Caddy), not `0.0.0.0` for public exposure.
+- From the internet: open **`https://kb.reinhardterasmus.info`** — browser should prompt for **Basic Auth**, then Streamlit (and optionally `KB_ADMIN_PASSWORD` if set).
+
+## 8. Optional: Cloudflare Access later
+
+If you outgrow Basic Auth (team SSO, audit logs), you can add **Cloudflare Access** on the same hostname; then you may remove Caddy Basic Auth or keep defense-in-depth. Not required for the current plan.
 
 ## 9. n8n / Qdrant
 
-This runbook is **only** for the KB admin UI. **Do not** expose Qdrant’s REST port raw to the internet without **API keys**, strict policies, and the same tunnel/VPN discipline. n8n should continue using URLs reachable **from n8n**, not necessarily this Streamlit hostname.
+This tunnel is **only** for the KB admin UI. **Do not** expose Qdrant REST to the public internet. n8n keeps using URLs reachable **from n8n** (often host LAN IP or Docker gateway), not necessarily this hostname.
 
 ## References
 
 - [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/)
-- [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/)
-- [kb-admin.md](kb-admin.md) — Streamlit hardening notes
+- [Caddy basic_auth](https://caddyserver.com/docs/caddyfile/directives/basic_auth)
+- [kb-admin.md](kb-admin.md)

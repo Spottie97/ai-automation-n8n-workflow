@@ -1,8 +1,9 @@
-# User systemd unit (recommended: bind 127.0.0.1 and use SSH tunnel or reverse proxy).
+# User systemd unit: Streamlit KB admin on localhost only.
 # 1. Copy to ~/.config/systemd/user/kb-admin.service
 # 2. Replace REPO_ROOT with the absolute path to this git clone (no trailing slash).
 # 3. systemctl --user daemon-reload && systemctl --user enable --now kb-admin.service
 #
+# With Cloudflare Tunnel + Caddy: tunnel → 127.0.0.1:8089 (Basic Auth) → this app on 8501.
 # For a system-wide unit, use /etc/systemd/system/ and a dedicated service user.
 
 [Unit]

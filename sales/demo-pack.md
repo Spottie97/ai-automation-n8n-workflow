@@ -1,6 +1,17 @@
 # Demo pack — AI inbox assistant (Phase 4)
 
-Use with **Harborview Coffee Co.** demo data: [sample_data/demo_faq.txt](../sample_data/demo_faq.txt). Ingest via CLI, **[KB admin GUI](../docs/kb-admin.md)** (`streamlit run apps/kb_admin/app.py`), or `python scripts/verify_stack.py` then **`scripts/reply_once.py`** (see [docs/n8n-email-mvp-build.md](../docs/n8n-email-mvp-build.md) §10). n8n import + manual test: [docs/n8n-runbook-import-test.md](../docs/n8n-runbook-import-test.md). Workflows: [workflows/rag-email-mvp.json](../workflows/rag-email-mvp.json), [workflows/rag-whatsapp-mvp.json](../workflows/rag-whatsapp-mvp.json), [workflows/rag-email-whatsapp-mvp.json](../workflows/rag-email-whatsapp-mvp.json).
+Use with **Harborview Coffee Co.** demo data: [sample_data/demo_faq.txt](../sample_data/demo_faq.txt). One-shot stack + ingest + RAG smoke: **`./scripts/verify_demo_rag.sh`** (from repo root, `.env` + `.venv`). Ingest via CLI or **[KB admin GUI](../docs/kb-admin.md)** — remote KB admin after tunnel: **`https://kb.reinhardterasmus.info`** (Basic Auth + optional `KB_ADMIN_PASSWORD`). n8n: **[n8n-go-live-checklist.md](../docs/n8n-go-live-checklist.md)** and [n8n-runbook-import-test.md](../docs/n8n-runbook-import-test.md). Workflows: [workflows/rag-email-mvp.json](../workflows/rag-email-mvp.json), [workflows/rag-whatsapp-mvp.json](../workflows/rag-whatsapp-mvp.json), [workflows/rag-email-whatsapp-mvp.json](../workflows/rag-email-whatsapp-mvp.json).
+
+---
+
+## Client onboarding (per customer)
+
+- [ ] **Collection / client id** — agree sanitized `CLIENT_ID` (matches Qdrant collection).
+- [ ] **Source material** — FAQs, hours, pricing, policies (txt/json or paste in KB admin).
+- [ ] **Ingest** — CLI or KB admin; spot-check search hits for top 10 questions.
+- [ ] **Prompt** — fill [prompts/system_template.md](../prompts/system_template.md) tone + escalation rules.
+- [ ] **n8n** — clone workflow; IMAP/SMTP or WhatsApp credentials; env vars from n8n’s network view ([n8n-go-live-checklist.md](../docs/n8n-go-live-checklist.md)).
+- [ ] **Go-live** — dry run, then activate; monitor 48h ([ai_automation_side_hustle_checklist.md](../ai_automation_side_hustle_checklist.md)).
 
 ---
 
@@ -33,7 +44,7 @@ Adjust numbers to your market; keep setup fee separate so onboarding covers inge
 
 1. **The problem:** “Same questions eat your morning.”
 2. **The stack:** FAQs → vectors (Qdrant) → short RAG reply (Gemma on your server); you stay in control.
-3. **Live or recorded:** Run `reply_once.py` with `demo_client` **or** the imported n8n workflow (Manual trigger) — ask: *hours*, *dogs on patio*, *catering lead time*.
+3. **Live or recorded:** Run `./scripts/verify_demo_rag.sh` **or** `reply_once.py` with `demo_client` **or** the imported n8n workflow (Manual trigger) — ask: *hours*, *dogs on patio*, *catering lead time*. Optionally show KB admin at `https://kb.reinhardterasmus.info` after tunnel + Caddy are up.
 4. **Safety:** No answer if nothing in KB; polite handoff line (same as automation fallback).
 5. **Next step:** “I’d ingest your real FAQs + wire your mailbox when you’re ready.”
 
@@ -58,9 +69,8 @@ These illustrate tone and grounding; real outputs come from your model + retriev
 
 - [x] Demo data: [sample_data/demo_faq.txt](../sample_data/demo_faq.txt)  
 - [x] Workflow JSON: [workflows/rag-email-mvp.json](../workflows/rag-email-mvp.json), [workflows/rag-whatsapp-mvp.json](../workflows/rag-whatsapp-mvp.json), [workflows/rag-email-whatsapp-mvp.json](../workflows/rag-email-whatsapp-mvp.json)  
-- [ ] Stack check: `python scripts/verify_stack.py` (from a host that reaches your services)  
-- Ingest: `python scripts/ingest.py ingest --client-id demo_client --input sample_data/demo_faq.txt`  
-- One-shot RAG: `python scripts/reply_once.py --client-id demo_client --question "…"`  
-- [ ] n8n: follow [docs/n8n-runbook-import-test.md](../docs/n8n-runbook-import-test.md)
+- [ ] Stack + demo RAG: `./scripts/verify_demo_rag.sh` (on a host that reaches Ollama/Qdrant/llama-server)  
+- [ ] KB admin HTTPS: `https://kb.reinhardterasmus.info` (Caddy Basic Auth + tunnel — [docs/cloudflare-tunnel-kb-admin.md](../docs/cloudflare-tunnel-kb-admin.md))  
+- [ ] n8n: [docs/n8n-go-live-checklist.md](../docs/n8n-go-live-checklist.md) + [docs/n8n-runbook-import-test.md](../docs/n8n-runbook-import-test.md)
 
 When n8n email/WhatsApp MVP is live, repeat the same questions against the real workflow and compare.

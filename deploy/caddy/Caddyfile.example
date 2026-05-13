@@ -1,0 +1,16 @@
+# Loopback-only reverse proxy: HTTPS is terminated at Cloudflare; this is HTTP on localhost.
+#
+# 1. Install Caddy on ai-server (see https://caddyserver.com/docs/install )
+# 2. caddy hash-password   → paste bcrypt hash below (replace PLACEHOLDER)
+# 3. Username: short name or email (if browser rejects email in Basic Auth, use a short name)
+# 4. Copy to e.g. /etc/caddy/kb-admin.Caddyfile and run caddy with that config.
+# 5. Tunnel ingress → http://127.0.0.1:8089 (see deploy/cloudflared/config.yml.example)
+#
+# Streamlit must be on 127.0.0.1:8501 (kb-admin.service).
+
+127.0.0.1:8089 {
+	basic_auth {
+		your_username $2a$14$REPLACE_WITH_OUTPUT_OF_caddy_hash-password
+	}
+	reverse_proxy 127.0.0.1:8501
+}

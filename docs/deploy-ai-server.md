@@ -52,13 +52,13 @@ python scripts/ingest.py ingest --client-id demo_client --input sample_data/demo
 python scripts/reply_once.py --client-id demo_client --question "What are your hours?" --verbose
 ```
 
-### Remote HTTPS (Cloudflare Tunnel + Access)
+### Remote HTTPS (Cloudflare Tunnel + Basic Auth)
 
-For a stable **https://…** URL without opening inbound ports on the server, use Cloudflare Tunnel with **Access** (or loopback Basic Auth). Full steps: **[cloudflare-tunnel-kb-admin.md](cloudflare-tunnel-kb-admin.md)** and [deploy/cloudflared/config.yml.example](../deploy/cloudflared/config.yml.example).
+Stable URL **`https://kb.reinhardterasmus.info`**: Cloudflare Tunnel → Caddy on **`127.0.0.1:8089`** (username/password) → Streamlit on **`127.0.0.1:8501`**. Full steps: **[cloudflare-tunnel-kb-admin.md](cloudflare-tunnel-kb-admin.md)**, [deploy/cloudflared/config.yml.example](../deploy/cloudflared/config.yml.example), [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example).
 
 ## 6. KB admin UI
 
-**With Cloudflare Tunnel:** bind Streamlit to **loopback only** and follow **[cloudflare-tunnel-kb-admin.md](cloudflare-tunnel-kb-admin.md)** (tunnel → `http://127.0.0.1:8501`). Do not expose `0.0.0.0:8501` on the public internet without a reverse proxy you control.
+**With Cloudflare Tunnel:** bind Streamlit to **loopback only** (`127.0.0.1:8501`). The tunnel must **not** point at Streamlit directly — point it at **Caddy `127.0.0.1:8089`** (see [cloudflare-tunnel-kb-admin.md](cloudflare-tunnel-kb-admin.md)). Do not expose `0.0.0.0:8501` on the public internet.
 
 ```bash
 source .venv/bin/activate
@@ -79,7 +79,7 @@ Long-running: copy [deploy/systemd/kb-admin.service.example](../deploy/systemd/k
 This repository does not install n8n. On your n8n instance:
 
 1. Set environment variables to match `.env` (`OLLAMA_HOST`, `OLLAMA_EMBED_MODEL`, `QDRANT_URL`, `LLAMA_SERVER_URL`, `LLAMA_CHAT_MODEL`, `CLIENT_ID`, email/WhatsApp vars as needed). n8n must reach the same URLs your `.env` uses (often `http://HOST:PORT` from the n8n container/host, not necessarily `127.0.0.1`).
-2. Import workflow JSON from `workflows/` (see [n8n-email-mvp-build.md](n8n-email-mvp-build.md) and [n8n-runbook-import-test.md](n8n-runbook-import-test.md)).
+2. Import workflow JSON from `workflows/` (see [n8n-email-mvp-build.md](n8n-email-mvp-build.md), [n8n-runbook-import-test.md](n8n-runbook-import-test.md), and **[n8n-go-live-checklist.md](n8n-go-live-checklist.md)**).
 
 ## 8. Updates
 

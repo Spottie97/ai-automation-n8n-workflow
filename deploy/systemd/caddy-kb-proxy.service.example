@@ -1,0 +1,20 @@
+# Optional: run Caddy as a systemd service for the KB admin loopback proxy.
+# 1. Install Caddy and create a real Caddyfile (from deploy/caddy/Caddyfile.example).
+# 2. Replace paths below.
+# 3. sudo cp caddy-kb-proxy.service.example /etc/systemd/system/caddy-kb-proxy.service
+# 4. sudo systemctl daemon-reload && sudo systemctl enable --now caddy-kb-proxy.service
+#
+# Start kb-admin.service before this (Streamlit on 8501).
+
+[Unit]
+Description=Caddy loopback proxy (Basic Auth → Streamlit KB admin)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/caddy run --config /etc/caddy/kb-admin.Caddyfile
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

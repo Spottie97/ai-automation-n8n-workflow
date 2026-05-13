@@ -62,7 +62,7 @@ Pick **one** pattern:
 |--------|-------------|
 | **SSH local forward** | You alone, temporary: `ssh -L 8501:127.0.0.1:8501 user@your-server` then run Streamlit on the server with `--server.address 127.0.0.1` (default) — no public port. |
 | **Tailscale / VPN** | You trust the mesh; bind `127.0.0.1` or LAN IP; optional `KB_ADMIN_PASSWORD`. |
-| **Cloudflare Tunnel / similar** | Stable HTTPS URL without opening inbound ports; put **Cloudflare Access** (recommended) or **Basic Auth** in front — see **[cloudflare-tunnel-kb-admin.md](cloudflare-tunnel-kb-admin.md)**; set strong `KB_ADMIN_PASSWORD`. |
+| **Cloudflare Tunnel** | HTTPS at **`https://kb.reinhardterasmus.info`** without inbound ports; **Caddy Basic Auth** on loopback then Streamlit — see **[cloudflare-tunnel-kb-admin.md](cloudflare-tunnel-kb-admin.md)**; set strong `KB_ADMIN_PASSWORD`. |
 
 Do **not** rely on Streamlit’s password alone for anything internet-facing—add **TLS + Access/Basic Auth** at the tunnel or reverse proxy.
 

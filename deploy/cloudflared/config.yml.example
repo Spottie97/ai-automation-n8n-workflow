@@ -1,12 +1,13 @@
 # Copy to ~/.cloudflared/config.yml (or /etc/cloudflared/config.yml).
-# Replace ALL_CAPS placeholders after: cloudflared tunnel create kb-admin
+# Replace YOUR_TUNNEL_UUID and credentials path after: cloudflared tunnel create kb-admin
 #
-# Streamlit must listen ONLY on 127.0.0.1:8501.
+# Point at the Caddy loopback port (Basic Auth), NOT Streamlit directly — see
+# docs/cloudflare-tunnel-kb-admin.md and deploy/caddy/Caddyfile.example
 
 tunnel: YOUR_TUNNEL_UUID
 credentials-file: /home/USER/.cloudflared/YOUR_TUNNEL_UUID.json
 
 ingress:
-  - hostname: kb-admin.example.com
-    service: http://127.0.0.1:8501
+  - hostname: kb.reinhardterasmus.info
+    service: http://127.0.0.1:8089
   - service: http_status:404

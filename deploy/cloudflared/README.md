@@ -1,5 +1,6 @@
-# Cloudflare Tunnel (example layout)
+# Cloudflare Tunnel (KB admin)
 
-Use the **full runbook** in [docs/cloudflare-tunnel-kb-admin.md](../../docs/cloudflare-tunnel-kb-admin.md).
+- **Hostname:** `kb.reinhardterasmus.info` (ingress in [config.yml.example](config.yml.example)).
+- **Origin:** `http://127.0.0.1:8089` — Caddy with **Basic Auth**, not Streamlit directly.
 
-`config.yml.example` is a commented stub; copy values after you run `cloudflared tunnel create` on the server.
+Full runbook: [docs/cloudflare-tunnel-kb-admin.md](../../docs/cloudflare-tunnel-kb-admin.md).

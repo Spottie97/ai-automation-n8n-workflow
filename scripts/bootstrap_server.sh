@@ -30,3 +30,5 @@ else
   echo ".env already present; skipped copy from .env.example"
   echo "Smoke test: python scripts/verify_stack.py"
 fi
+
+chmod +x scripts/bootstrap_server.sh scripts/verify_demo_rag.sh 2>/dev/null || true
