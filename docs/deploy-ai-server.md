@@ -52,16 +52,27 @@ python scripts/ingest.py ingest --client-id demo_client --input sample_data/demo
 python scripts/reply_once.py --client-id demo_client --question "What are your hours?" --verbose
 ```
 
+### Remote HTTPS (Cloudflare Tunnel + Access)
+
+For a stable **https://…** URL without opening inbound ports on the server, use Cloudflare Tunnel with **Access** (or loopback Basic Auth). Full steps: **[cloudflare-tunnel-kb-admin.md](cloudflare-tunnel-kb-admin.md)** and [deploy/cloudflared/config.yml.example](../deploy/cloudflared/config.yml.example).
+
 ## 6. KB admin UI
 
-Manual run (LAN):
+**With Cloudflare Tunnel:** bind Streamlit to **loopback only** and follow **[cloudflare-tunnel-kb-admin.md](cloudflare-tunnel-kb-admin.md)** (tunnel → `http://127.0.0.1:8501`). Do not expose `0.0.0.0:8501` on the public internet without a reverse proxy you control.
+
+```bash
+source .venv/bin/activate
+streamlit run apps/kb_admin/app.py --server.address 127.0.0.1 --server.port 8501
+```
+
+**Trusted LAN only** (broader bind):
 
 ```bash
 source .venv/bin/activate
 streamlit run apps/kb_admin/app.py --server.address 0.0.0.0 --server.port 8501
 ```
 
-Prefer **localhost + SSH tunnel** or a reverse proxy with TLS for anything beyond a trusted LAN. Long-running: copy [deploy/systemd/kb-admin.service.example](../deploy/systemd/kb-admin.service.example), replace every `REPO_ROOT` with your clone path, install under `systemd --user` or system-wide, then enable the unit. Details: [kb-admin.md](kb-admin.md).
+Long-running: copy [deploy/systemd/kb-admin.service.example](../deploy/systemd/kb-admin.service.example) (uses **127.0.0.1** — suitable with a tunnel). More detail: [kb-admin.md](kb-admin.md).
 
 ## 7. n8n
 
