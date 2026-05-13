@@ -1,7 +1,8 @@
 # Loopback-only reverse proxy: HTTPS is terminated at Cloudflare; this is HTTP on localhost.
 #
-# Use http:// on the site address so Caddy does NOT enable automatic TLS for 127.0.0.1
-# (otherwise it tries local PKI + sudo to install a root cert — see cloudflare-tunnel-kb-admin.md).
+# Use http:// on the site address so Caddy does NOT enable automatic TLS.
+# Use :8089 + bind 127.0.0.1 so Cloudflare's Host header (kb.reinhardterasmus.info)
+# still matches this site while the listener stays loopback-only.
 #
 # 1. Install Caddy on ai-server (see https://caddyserver.com/docs/install )
 # 2. caddy hash-password   → paste bcrypt hash below (replace PLACEHOLDER)
@@ -11,9 +12,17 @@
 #
 # Streamlit must be on 127.0.0.1:8501 (kb-admin.service).
 
-http://127.0.0.1:8089 {
+http://:8089 {
+	bind 127.0.0.1
+
 	basic_auth {
 		your_username $2a$14$REPLACE_WITH_OUTPUT_OF_caddy_hash-password
 	}
-	reverse_proxy 127.0.0.1:8501
+	# TLS ends at Cloudflare; loopback is HTTP. Tell Streamlit the client used HTTPS (wss://),
+	# or Safari shows a blank page. Caddy adds X-Forwarded-* by default—do not duplicate
+	# X-Forwarded-Host / X-Forwarded-For or `caddy validate` warns they are unnecessary.
+	reverse_proxy 127.0.0.1:8501 {
+		header_up Host {host}
+		header_up X-Forwarded-Proto https
+	}
 }

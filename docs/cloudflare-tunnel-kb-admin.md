@@ -2,7 +2,7 @@
 
 Goal: **no open inbound ports** on the ai-server. **TLS** terminates at Cloudflare. **cloudflared** dials out. A **loopback-only Caddy** instance adds **HTTP Basic Auth** (username + password — you can use your email as the username), then proxies to **Streamlit on `127.0.0.1:8501`**.
 
-This runbook matches `**kb.reinhardterasmus.info**` → tunnel → `**http://127.0.0.1:8089**` (Caddy) → Streamlit.
+This runbook matches `**kb.reinhardterasmus.info**` → tunnel → `**http://127.0.0.1:8089**` (Caddy listening on loopback) → Streamlit.
 
 We are **not** using Cloudflare Access here; auth is **only** Basic Auth at Caddy plus optional `**KB_ADMIN_PASSWORD`** inside Streamlit.
 
@@ -34,7 +34,7 @@ flowchart LR
 ## 0. Start order on the server
 
 1. `**kb-admin.service**` — Streamlit on `127.0.0.1:8501`
-2. **Caddy** — `http://127.0.0.1:8089` (plain HTTP on loopback) with Basic Auth → proxy to `8501` — [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example)
+2. **Caddy** — `http://:8089` with `bind 127.0.0.1` (plain HTTP on loopback) with Basic Auth → proxy to `8501` — [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example)
 3. `**cloudflared`** — ingress hostname → `http://127.0.0.1:8089` — [deploy/cloudflared/config.yml.example](../deploy/cloudflared/config.yml.example)
 
 ## 1. Install cloudflared (Ubuntu server)
@@ -94,15 +94,26 @@ cloudflared tunnel route dns kb-admin kb.reinhardterasmus.info
 3. Copy [deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example) to the server (e.g. `/etc/caddy/kb-admin.Caddyfile`) and merge or `import` into `/etc/caddy/Caddyfile`. Replace `your_username` with a short username **or** your email (if login fails with an email, use a short username).
 4. Replace the `$2a$14$...` placeholder with the hash from step 2.
 
-**Critical:** the site line must be **`http://127.0.0.1:8089`** (with the `http://` prefix). If you write only `127.0.0.1:8089`, Caddy may enable **automatic HTTPS** for `127.0.0.1`, issue a **local CA** cert, and try **`sudo`** to install it — the `caddy` user is not in sudoers, so you see `pki.ca.local` / `failed to install root certificate` in `journalctl`.
+**Critical:** use **`http://:8089`** with **`bind 127.0.0.1`**. The `http://` prefix prevents automatic HTTPS/local CA behavior. The `:8089` address accepts Cloudflare's original `Host: kb.reinhardterasmus.info`, while `bind 127.0.0.1` keeps the listener loopback-only.
+
+Do **not** use `http://127.0.0.1:8089` as the Caddy site address for this tunnel. That address only matches requests with `Host: 127.0.0.1`; Cloudflare sends `Host: kb.reinhardterasmus.info`, which can produce a blank browser page with `HTTP 200` and `content-length: 0`.
 
 5. Validate and reload:
    ```bash
    sudo caddy validate --config /etc/caddy/Caddyfile
    sudo systemctl reload caddy
    ```
+   Warnings like **“Unnecessary header_up X-Forwarded-Host / X-Forwarded-For”** are safe to ignore after you remove those lines—Caddy sets them. **`X-Forwarded-Proto https`** is still required. Optional: `sudo caddy fmt --overwrite /etc/caddy/Caddyfile` clears the “not formatted” warning.
 
 **Do not** bind this site to `0.0.0.0`; keep loopback only. Optional dedicated unit: [deploy/systemd/caddy-kb-proxy.service.example](../deploy/systemd/caddy-kb-proxy.service.example).
+
+### Blank page in Safari/Firefox but `curl` returns 200
+
+If `curl -u "$USER:$PASS" -D- -o /tmp/kb.html https://kb.reinhardterasmus.info/` shows **`HTTP 200`** but **`content-length: 0`**, Caddy is likely not matching the Cloudflare `Host` header. Use `http://:8089` plus `bind 127.0.0.1`, then reload Caddy.
+
+If the HTML body is non-empty but the browser is still blank, check the Streamlit WebSocket next. **Streamlit** needs `wss://`; set **`X-Forwarded-Proto: https`** on the `reverse_proxy` to Streamlit ([deploy/caddy/Caddyfile.example](../deploy/caddy/Caddyfile.example)). Caddy already forwards **`X-Forwarded-Host`** / **`X-Forwarded-For`**—duplicating them triggers validate warnings and is unnecessary. Reload Caddy, hard-refresh the browser.
+
+In Safari: **Develop → Show JavaScript Console** (enable Develop menu first) and look for WebSocket / mixed-content errors.
 
 ### After fix — logs should look quiet
 

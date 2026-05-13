@@ -217,6 +217,10 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Caddy basic_auth hashes are secrets — commit only Caddyfile.example; prod configs live on the server
+deploy/caddy/Caddyfile
+deploy/caddy/*.prod.Caddyfile
+
 # Secrets and local ops (do not commit)
 .env.*
 !.env.example
